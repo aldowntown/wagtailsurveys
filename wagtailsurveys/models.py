@@ -3,6 +3,7 @@ from __future__ import absolute_import, unicode_literals
 import json
 import re
 
+from collections import OrderedDict
 from django.contrib.contenttypes.models import ContentType
 from django.core.serializers.json import DjangoJSONEncoder
 from django.db import models
@@ -16,7 +17,7 @@ from unidecode import unidecode
 from wagtail.wagtailadmin.edit_handlers import FieldPanel
 from wagtail.wagtailcore.models import Page, Orderable, UserPagePermissionsProxy, get_page_models
 
-from wagtailsurveys.forms import FormBuilder
+from wagtailsurveys.forms import BaseForm
 
 
 @python_2_unicode_compatible
@@ -31,7 +32,8 @@ class AbstractFormSubmission(models.Model):
     form_data = models.TextField()
     page = models.ForeignKey(Page, on_delete=models.CASCADE, related_name='+')
 
-    created_at = models.DateTimeField(verbose_name=_('submit time'), auto_now_add=True)
+    created_at = models.DateTimeField(
+        verbose_name=_('submit time'), auto_now_add=True)
 
     def get_data(self):
         """
@@ -81,23 +83,27 @@ class AbstractFormField(Orderable):
     label = models.CharField(
         verbose_name=_('label'),
         max_length=255,
-        help_text=_('The label of the form field')
-    )
-    field_type = models.CharField(verbose_name=_('field type'), max_length=16, choices=FORM_FIELD_CHOICES)
+        help_text=_('The label of the form field'))
+    field_type = models.CharField(
+        verbose_name=_('field type'),
+        max_length=16,
+        choices=FORM_FIELD_CHOICES)
     required = models.BooleanField(verbose_name=_('required'), default=True)
     choices = models.CharField(
         verbose_name=_('choices'),
         max_length=512,
         blank=True,
-        help_text=_('Comma separated list of choices. Only applicable in checkboxes, radio and dropdown.')
-    )
+        help_text=
+        _('Comma separated list of choices. Only applicable in checkboxes, radio and dropdown.'
+          ))
     default_value = models.CharField(
         verbose_name=_('default value'),
         max_length=255,
         blank=True,
-        help_text=_('Default value. Comma separated values supported for checkboxes.')
-    )
-    help_text = models.CharField(verbose_name=_('help text'), max_length=255, blank=True)
+        help_text=_(
+            'Default value. Comma separated values supported for checkboxes.'))
+    help_text = models.CharField(
+        verbose_name=_('help text'), max_length=255, blank=True)
 
     @property
     def clean_name(self):
@@ -132,8 +138,7 @@ def get_survey_types():
         ]
 
         _FORM_CONTENT_TYPES = list(
-            ContentType.objects.get_for_models(*form_models).values()
-        )
+            ContentType.objects.get_for_models(*form_models).values())
     return _FORM_CONTENT_TYPES
 
 
@@ -152,25 +157,36 @@ class AbstractSurvey(Page):
 
     HTML_EXTENSION_RE = re.compile(r"(.*)\.html")
 
-    form_builder = FormBuilder
-
     def __init__(self, *args, **kwargs):
         super(AbstractSurvey, self).__init__(*args, **kwargs)
         if not hasattr(self, 'landing_page_template'):
-            template_wo_ext = re.match(self.HTML_EXTENSION_RE, self.template).group(1)
+            template_wo_ext = re.match(self.HTML_EXTENSION_RE,
+                                       self.template).group(1)
             self.landing_page_template = template_wo_ext + '_landing.html'
 
     class Meta:
         abstract = True
 
-    def get_form_fields(self):
-        """
-        Survey page expects `survey_form_fields` to be declared.
-        If you want to change backwards relation name,
-        you will need to override this method.
-        """
+    def clean_name(self, name):
+        # unidecode will return an ascii string while slugify wants a
+        # unicode string on the other hand, slugify returns a safe-string
+        # which will be converted to a normal str
+        return str(slugify(text_type(unidecode(name))))
 
-        return self.survey_form_fields.all()
+    def get_form_fields_field_name(self):
+        return 'form_fields'
+
+    def get_form_fields(self):
+        fields = getattr(self, self.get_form_fields_field_name())
+        formfields = OrderedDict()
+
+        for field in fields:
+            options = field.block.get_options_for_field(field.value)
+            formfields[self.clean_name(
+                field.value['label'])] = field.block.get_form_field(
+                    options=options)
+
+        return formfields
 
     def get_data_fields(self):
         """
@@ -181,15 +197,15 @@ class AbstractSurvey(Page):
             ('created_at', _('Submission Date')),
         ]
         data_fields += [
-            (field.clean_name, field.label)
-            for field in self.get_form_fields()
+            (self.clean_name(field.value['label']), field.value['label'])
+            for field in getattr(self, self.get_form_fields_field_name())
         ]
 
         return data_fields
 
     def get_form_class(self):
-        form_builder = self.form_builder(self.get_form_fields())
-        return form_builder.get_form_class()
+        return type(
+            str('WagtailSurveysForm'), (BaseForm, ), self.get_form_fields())
 
     def get_form_parameters(self):
         return {}
@@ -233,21 +249,14 @@ class AbstractSurvey(Page):
                 self.process_form_submission(form)
 
                 # render the landing_page
-                return render(
-                    request,
-                    self.landing_page_template,
-                    self.get_context(request)
-                )
+                return render(request, self.landing_page_template,
+                              self.get_context(request))
         else:
             form = self.get_form(page=self, user=request.user)
 
         context = self.get_context(request)
         context['form'] = form
-        return render(
-            request,
-            self.template,
-            context
-        )
+        return render(request, self.template, context)
 
     preview_modes = [
         ('form', 'Form'),
@@ -256,10 +265,7 @@ class AbstractSurvey(Page):
 
     def serve_preview(self, request, mode):
         if mode == 'landing':
-            return render(
-                request,
-                self.landing_page_template,
-                self.get_context(request)
-            )
+            return render(request, self.landing_page_template,
+                          self.get_context(request))
         else:
             return super(AbstractSurvey, self).serve_preview(request, mode)

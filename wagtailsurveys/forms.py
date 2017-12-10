@@ -43,25 +43,24 @@ class FormBuilder(object):
         return django.forms.DecimalField(**options)
 
     def create_dropdown_field(self, field, options):
-        options['choices'] = map(
-            lambda x: (x.strip(), x.strip()),
-            field.choices.split(',')
-        )
+        options['choices'] = map(lambda x: (x.strip(), x.strip()),
+                                 field.choices.split(','))
         return django.forms.ChoiceField(**options)
 
     def create_radio_field(self, field, options):
-        options['choices'] = map(
-            lambda x: (x.strip(), x.strip()),
-            field.choices.split(',')
-        )
-        return django.forms.ChoiceField(widget=django.forms.RadioSelect, **options)
+        options['choices'] = map(lambda x: (x.strip(), x.strip()),
+                                 field.choices.split(','))
+        return django.forms.ChoiceField(
+            widget=django.forms.RadioSelect, **options)
 
     def create_checkboxes_field(self, field, options):
-        options['choices'] = [(x.strip(), x.strip()) for x in field.choices.split(',')]
-        options['initial'] = [x.strip() for x in field.default_value.split(',')]
+        options['choices'] = [(x.strip(), x.strip())
+                              for x in field.choices.split(',')]
+        options['initial'] = [
+            x.strip() for x in field.default_value.split(',')
+        ]
         return django.forms.MultipleChoiceField(
-            widget=django.forms.CheckboxSelectMultiple, **options
-        )
+            widget=django.forms.CheckboxSelectMultiple, **options)
 
     def create_checkbox_field(self, field, options):
         return django.forms.BooleanField(**options)
@@ -88,7 +87,8 @@ class FormBuilder(object):
             options = self.get_field_options(field)
 
             if field.field_type in self.FIELD_TYPES:
-                formfields[field.clean_name] = self.FIELD_TYPES[field.field_type](self, field, options)
+                formfields[field.clean_name] = self.FIELD_TYPES[
+                    field.field_type](self, field, options)
             else:
                 raise Exception("Unrecognised field type: " + field.field_type)
 
@@ -103,15 +103,17 @@ class FormBuilder(object):
         return options
 
     def get_form_class(self):
-        return type(str('WagtailSurveysForm'), (BaseForm,), self.formfields)
+        return type(str('WagtailSurveysForm'), (BaseForm, ), self.formfields)
 
 
 class SelectDateForm(django.forms.Form):
     date_from = django.forms.DateTimeField(
         required=False,
-        widget=django.forms.DateInput(attrs={'placeholder': 'Date from'})
-    )
+        widget=django.forms.DateInput(attrs={
+            'placeholder': 'Date from'
+        }))
     date_to = django.forms.DateTimeField(
         required=False,
-        widget=django.forms.DateInput(attrs={'placeholder': 'Date to'})
-    )
+        widget=django.forms.DateInput(attrs={
+            'placeholder': 'Date to'
+        }))
